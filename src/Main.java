@@ -6,6 +6,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Main {
+
+    /* 간단히 상수 정수로 헤더 작성(매직 넘버, 버전 정의) */
+    private static final int MAGIC_NUMBER = 0xCAFEBABE;
+    private static final int VERSION = 1;
+
+
+
     private final String filePath;
     private final Map<String, Long> indexMap = new HashMap<>();
 
@@ -13,11 +20,52 @@ public class Main {
         this.filePath = filePath;
     }
 
+
+    /**
+     * 파일 헤더를 검사하거나, 없으면 새로 파일을 생성한다.
+     * magic number, version 등 체크
+     */
+    private void checkOrInitFileHeader() throws IOException {
+        File file = new File(filePath);
+
+        // 파일이 없을 때, 크기가 0일 때
+        if (!file.exists() || file.length() == 0) {
+            try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+                // 새 파일 헤더 기록
+                raf.writeInt(MAGIC_NUMBER);
+                raf.writeInt(VERSION);
+
+                /**
+                 * 추후 확장 시 여기에 헤더 정보 추가적으로 작성(페이지 크기 ..)
+                 */
+            }
+            return;
+        }
+
+        // 기존 파일이 있는 경우 헤더 검사
+        try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+            int magicNumber = raf.readInt();
+            int version = raf.readInt();
+
+            if (magicNumber != MAGIC_NUMBER) {
+                throw new IOException("잘못된 매직 넘버, 이 DB 파일이 아닙니다.");
+            }
+            if (version != VERSION) {
+                throw new IOException("파일 버전이 맞지 않습니다. version = " + version + ", expected = " + VERSION);
+            }
+        }
+    }
+
+
+
+
     /**
      * put(key, value):
      * 파일 포맷: [deletedFlag(boolean), keySize(int) key(UTF), valueSize(int), value(UTF)]
      */
     public void put(String key, String value) throws IOException {
+        checkOrInitFileHeader();
+
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "rw")) {
             // RandomAccessFile을 "rw"로 열면 내부적으로 해당 파일이 존재하지 않을 경우 새로 생성한다.
             raf.seek(raf.length());
@@ -76,6 +124,8 @@ public class Main {
     H2에서는 삭제 시 소프트 삭제 후 가비지 컬렉션과 재압축 과정을 통해 공간을 정리한다.
      */
     public void delete(String key) throws IOException {
+        checkOrInitFileHeader();
+
         Long offset = indexMap.remove(key);
         if (offset == null) {
             return;
@@ -91,15 +141,24 @@ public class Main {
     }
 
     public void loadIndex() throws IOException {
+        checkOrInitFileHeader();
+
+        indexMap.clear();
+
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
+            // 헤더 읽는 부분. 이 부분을 offset에 반영해야 error가 발생하지 않음.
+            int magicNumber = raf.readInt();
+            int version = raf.readInt();
+
             long fileLength = raf.length();
-            long offset = 0;
+
+            // 파일 포인터는 현재 헤더 끝에 있음. 이 지점을 offset으로 삼아야 에러가 발생하지 않음
+            long offset = raf.getFilePointer();
 
             while (offset < fileLength) {
                 raf.seek(offset);
 
                 boolean deleted = raf.readBoolean();
-
                 int keySize = raf.readInt();
                 String key = raf.readUTF();
                 int valueSize = raf.readInt();
@@ -110,6 +169,8 @@ public class Main {
                 if (!deleted) {
                     indexMap.put(key, offset);
                 }
+
+                offset = recordEnd;
             }
         } catch (FileNotFoundException e) {
         }
@@ -124,23 +185,21 @@ public class Main {
         Main db = new Main("data.db");
 
 
-        db.loadIndex();
+        // 헤더가 없으면 자동으로 생성
+        try {
+            db.loadIndex();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         db.put("hello", "world");
         db.put("test", "1234");
         db.put("apple", "banana");
 
-        System.out.println("Before Delete");
         System.out.println(db.get("hello"));
         System.out.println(db.get("test"));
         System.out.println(db.get("apple"));
 
-        db.delete("test");
-
-        System.out.println("After Delete");
-        System.out.println(db.get("hello"));
-        System.out.println(db.get("test")); // null이 출력된다.
-        System.out.println(db.get("apple"));
         /*
          * 삭제되면 논리적으로 null이지만, 물리 파일에는 남아 있다가 나중에 GC로 없어지는 구조
          * 아직 트랜잭션 개념을 도입하지 않았으므로 소프트 삭제되는 물리적으로 파일에 레코드가 남아 있는 단계까지 구현함.
