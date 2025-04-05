@@ -7,12 +7,6 @@ import java.util.Map;
 
 public class Main {
 
-    /* 간단히 상수 정수로 헤더 작성(매직 넘버, 버전 정의) */
-    private static final int MAGIC_NUMBER = 0xCAFEBABE;
-    private static final int VERSION = 1;
-
-
-
     private final String filePath;
     private final Map<String, Long> indexMap = new HashMap<>();
 
@@ -20,44 +14,14 @@ public class Main {
         this.filePath = filePath;
     }
 
+    public void vacuum() throws IOException {
+        VacuumService vac = new VacuumService(filePath);
+        vac.vacuum();
 
-    /**
-     * 파일 헤더를 검사하거나, 없으면 새로 파일을 생성한다.
-     * magic number, version 등 체크
-     */
-    private void checkOrInitFileHeader() throws IOException {
-        File file = new File(filePath);
-
-        // 파일이 없을 때, 크기가 0일 때
-        if (!file.exists() || file.length() == 0) {
-            try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-                // 새 파일 헤더 기록
-                raf.writeInt(MAGIC_NUMBER);
-                raf.writeInt(VERSION);
-
-                /**
-                 * 추후 확장 시 여기에 헤더 정보 추가적으로 작성(페이지 크기 ..)
-                 */
-            }
-            return;
-        }
-
-        // 기존 파일이 있는 경우 헤더 검사
-        try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
-            int magicNumber = raf.readInt();
-            int version = raf.readInt();
-
-            if (magicNumber != MAGIC_NUMBER) {
-                throw new IOException("잘못된 매직 넘버, 이 DB 파일이 아닙니다.");
-            }
-            if (version != VERSION) {
-                throw new IOException("파일 버전이 맞지 않습니다. version = " + version + ", expected = " + VERSION);
-            }
-        }
+        // vacuum 후에는 indexMap 재구축
+        indexMap.clear();
+        loadIndex();
     }
-
-
-
 
     /**
      * put(key, value):
@@ -103,9 +67,9 @@ public class Main {
             raf.seek(offset);
 
             boolean deletedFlag = raf.readBoolean();
-            if (deletedFlag) {
-                return null;
-            }
+//            if (deletedFlag) {
+//                return null;
+//            }
 
             int keySize = raf.readInt();
             String storedKey = raf.readUTF();
@@ -183,27 +147,55 @@ public class Main {
         }
 
         Main db = new Main("data.db");
+        db.loadIndex();
 
-
-        // 헤더가 없으면 자동으로 생성
-        try {
-            db.loadIndex();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
 
         db.put("hello", "world");
         db.put("test", "1234");
         db.put("apple", "banana");
 
-        System.out.println(db.get("hello"));
-        System.out.println(db.get("test"));
-        System.out.println(db.get("apple"));
+        db.delete("test");
+        System.out.println(db.get("test")); // 이것도 null. indexMap에서 인덱스를 연결해제 해서 논리적으로 찾을 수 없게하고 vacuum 단계에서 실제 데이터 삭제
+        db.vacuum();  // 별도 메서드
 
-        /*
-         * 삭제되면 논리적으로 null이지만, 물리 파일에는 남아 있다가 나중에 GC로 없어지는 구조
-         * 아직 트랜잭션 개념을 도입하지 않았으므로 소프트 삭제되는 물리적으로 파일에 레코드가 남아 있는 단계까지 구현함.
-         * 완전히 삭제하려면 할 수 있지만 이 부분은 가비지콜렉터가 하는 로직이라 그냥 간단하게 null 반환하게만 학습용으로 처리.
-         */
+        System.out.println(db.get("hello")); // world
+        System.out.println(db.get("원래 없던 키값")); // null
+        System.out.println(db.get("test")); // null
+
+    }
+
+    /**
+     * 파일 헤더를 검사하거나, 없으면 새로 파일을 생성한다.
+     * magic number, version 등 체크
+     */
+    private void checkOrInitFileHeader() throws IOException {
+        File file = new File(filePath);
+
+        // 파일이 없을 때, 크기가 0일 때
+        if (!file.exists() || file.length() == 0) {
+            try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+                // 새 파일 헤더 기록
+                raf.writeInt(GlobalVariables.MAGIC_NUMBER.getValue());
+                raf.writeInt(GlobalVariables.VERSION.getValue());
+
+                /**
+                 * 추후 확장 시 여기에 헤더 정보 추가적으로 작성(페이지 크기 ..)
+                 */
+            }
+            return;
+        }
+
+        // 기존 파일이 있는 경우 헤더 검사
+        try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+            int magicNumber = raf.readInt();
+            int version = raf.readInt();
+
+            if (magicNumber != GlobalVariables.MAGIC_NUMBER.getValue()) {
+                throw new IOException("잘못된 매직 넘버, 이 DB 파일이 아닙니다.");
+            }
+            if (version != GlobalVariables.VERSION.getValue()) {
+                throw new IOException("파일 버전이 맞지 않습니다. version = " + version + ", expected = " + GlobalVariables.VERSION.getValue());
+            }
+        }
     }
 }
