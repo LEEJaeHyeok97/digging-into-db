@@ -1,6 +1,8 @@
 ## 공부하며 알게된 내용을 작성한 블로그 포스팅
 - Vacuum과 GC(Garbage Collection)
   - https://icecupregular.tistory.com/9
+- B+Tree 와 그 구현
+  - https://icecupregular.tistory.com/10
 
 ## 기본 구조 및 기능
 - 프로젝트 구조 정리
