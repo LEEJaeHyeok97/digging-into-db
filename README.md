@@ -49,7 +49,7 @@
 
 ### 📦 프로그램 실행 예시
 
-```java
+```sql
 > CREATE TABLE users (id INT PRIMARY KEY, name TEXT, age INT);
 OK
 
