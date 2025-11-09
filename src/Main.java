@@ -1,20 +1,11 @@
-import java.io.FileWriter;
-import java.io.IOException;
+import model.Database;
 
 public class Main {
 
-    public static void main(String[] args) {
+    private static final String DB_PATH = "database.db";
 
-        try {
-            String filename = "database";
-            FileWriter fileWriter = new FileWriter(filename);
+    public static void main(String[] args) throws Exception {
 
-            String test = "test";
-            fileWriter.write(test);
-            fileWriter.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
+//        Database db = new Database();
     }
 }
