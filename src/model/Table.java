@@ -32,7 +32,7 @@ public class Table implements Serializable {
     }
 
     public List<Record> selectAll() {
-        return records;
+        return Collections.unmodifiableList(records);
     }
 
     public void updateRecordById(int index, Record newRecord) {

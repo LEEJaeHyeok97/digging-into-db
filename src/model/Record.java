@@ -21,4 +21,9 @@ public class Record implements Serializable {
     public Map<String, String> values() {
         return Collections.unmodifiableMap(values);
     }
+
+    @Override
+    public String toString() {
+        return values.toString();
+    }
 }
