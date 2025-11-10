@@ -12,7 +12,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
 
         Database db = Database.openOrCreate(DB_PATH, d -> {
-            Table users = new Table("users", List.of("id", "name", "age"));
+            Table users = new Table("users", List.of("id", "name", "age"), "id");
             d.addTable(users);
         });
 
