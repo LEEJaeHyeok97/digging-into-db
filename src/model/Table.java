@@ -6,6 +6,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 
 public class Table implements Serializable {
 
@@ -16,6 +18,7 @@ public class Table implements Serializable {
     private final List<Record> records;
     private final String primaryKeyColumn;
     private final Map<String, Record> pkIndex;
+    private final NavigableMap<String, Record> pkOrdered;
 
     public Table(String name, List<String> columns, String primaryKeyColumn) {
         validatePkInColumn(columns, primaryKeyColumn);
@@ -24,6 +27,7 @@ public class Table implements Serializable {
         this.records = new ArrayList<>();
         this.primaryKeyColumn = primaryKeyColumn;
         this.pkIndex = new HashMap<>();
+        this.pkOrdered = new TreeMap<>();
     }
 
     public String getName() {
@@ -51,6 +55,7 @@ public class Table implements Serializable {
         validateDuplicatedPK(key);
         records.add(record);
         pkIndex.put(key, record);
+        pkOrdered.put(key, record);
     }
 
     public void updateById(String key, Record newRecord) {
@@ -63,11 +68,13 @@ public class Table implements Serializable {
         int idx = indexOfIdentity(oldRecord);
         records.set(idx, newRecord);
         pkIndex.put(key, newRecord);
+        pkOrdered.put(key, newRecord);
     }
 
     public void deleteById(String key) {
         Record oldRecord = pkIndex.remove(key);
         validateIsNull(oldRecord);
+        pkOrdered.remove(key);
         int idx = indexOfIdentity(oldRecord);
         records.remove(idx);
     }
@@ -82,6 +89,10 @@ public class Table implements Serializable {
         }
 
         return out;
+    }
+
+    public List<Record> findAllByPkBetween(String from, boolean fromInclusive, String to, boolean toInclusive) {
+        return new ArrayList<>(pkOrdered.subMap(from, fromInclusive, to, toInclusive).values());
     }
 
     public int size() {

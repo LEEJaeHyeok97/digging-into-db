@@ -42,7 +42,7 @@ public class DatabaseController {
             try {
                 outputView.printTables(db.tableNames());
                 outputView.printMenu();
-                int selection = inputView.readMenuSelection(0, 7);
+                int selection = inputView.readMenuSelection(0, 8);
 
                 if (selection == MenuAction.EXIT.code()) {
                     saveQuiet(); outputView.printMessage("종료합니다."); break;
@@ -60,6 +60,8 @@ public class DatabaseController {
                     handleFindAllBy(table);
                 } else if (selection == MenuAction.SAVE.code()) {
                     trySave();
+                } else if (selection == MenuAction.PK_RANGE.code()) {
+                    handleFindPkRange(table);
                 } else {
                     throw new IllegalArgumentException("[ERROR] 잘못된 선택입니다.");
                 }
@@ -111,6 +113,12 @@ public class DatabaseController {
         String col = inputView.promptNonEmpty("검색 컬럼 ▶ ");
         String val = inputView.promptNonEmpty("값 ▶ ");
         outputView.printRecords(table, table.findAllBy(col, val));
+    }
+
+    void handleFindPkRange(Table table) {
+        String from = inputView.promptNonEmpty("PK from ▶ ");
+        String to   = inputView.promptNonEmpty("PK to   ▶ ");
+        outputView.printRecords(table, table.findAllByPkBetween(from, true, to, true));
     }
 
     private Table selectTable() {

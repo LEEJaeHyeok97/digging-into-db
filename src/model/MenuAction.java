@@ -12,7 +12,8 @@ public enum MenuAction {
     PATCH(4, "레코드 수정(Patch)"),
     DELETE(5, "레코드 삭제"),
     FIND_ALL_BY(6, "컬럼=값 검색(findAllBy)"),
-    SAVE(7, "저장");
+    SAVE(7, "저장"),
+    PK_RANGE(8, "PK 범위 조회");
 
     private final int code;
     private final String label;
@@ -57,6 +58,6 @@ public enum MenuAction {
     }
 
     public static int maxCode() {
-        return 7;
+        return 8;
     }
 }
