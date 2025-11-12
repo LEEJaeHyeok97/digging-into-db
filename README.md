@@ -20,7 +20,7 @@
 ### 구현 기능 목록
 
 - [ ] 데이터 CRUD
-   - [ ] INSERT, SELECT, UPDATE, DELETE 지원
+   - [x] INSERT, SELECT, UPDATE, DELETE 지원
    - [ ] 조건절(=, <, <=, >, >=, BETWEEN, IN) 지원
    - [ ] 기본키 제약사항 검증
 - [ ] 파일 입출력(영속성)

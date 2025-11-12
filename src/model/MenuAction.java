@@ -2,7 +2,6 @@ package model;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.BiFunction;
 
 public enum MenuAction {
 
@@ -41,7 +40,6 @@ public enum MenuAction {
         return exitsLoop;
     }
 
-    /* code → enum 매핑 */
     private static final Map<Integer, MenuAction> byCode = new HashMap<>();
 
     static {
