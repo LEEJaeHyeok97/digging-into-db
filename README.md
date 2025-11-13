@@ -38,7 +38,7 @@
    - [ ] 옵티마이저/실행기에서 인덱스 스캔 방법 선택 가능
    - [ ] INSERT/UPDATE/DELETE 시 트리 업데이트
 - [ ] 트랜잭션
-   - [ ] BEGIN/COMMIT/ROLLBACK 지원
+   - [x] BEGIN/COMMIT/ROLLBACK 지원
    - [ ]  최소한의 격리 보장(SERIALIZABLE)
 - [ ] 간단한 옵티마이저
    - [ ]  플랜 선택 기능

@@ -1,4 +1,4 @@
-package util;
+package util.wal;
 
 import java.io.Closeable;
 import java.io.EOFException;
@@ -12,7 +12,7 @@ import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
-import model.wal.WalEntry;
+import util.wal.WalEntry;
 
 public class Wal implements Closeable {
 

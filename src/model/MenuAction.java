@@ -13,7 +13,10 @@ public enum MenuAction {
     DELETE(5, "레코드 삭제"),
     FIND_ALL_BY(6, "컬럼=값 검색(findAllBy)"),
     SAVE(7, "저장"),
-    PK_RANGE(8, "PK 범위 조회");
+    PK_RANGE(8, "PK 범위 조회"),
+    BEGIN(9, "Tx Begin"),
+    COMMIT(10, "Tx Commit"),
+    ROLLBACK(11, "Tx Rollback");
 
     private final int code;
     private final String label;

@@ -9,6 +9,7 @@ import model.Database;
 import model.MenuAction;
 import model.Record;
 import model.Table;
+import util.transaction.TransactionManager;
 import view.InputView;
 import view.OutputView;
 
@@ -16,12 +17,14 @@ public class DatabaseController {
 
     private final Database db;
     private final String dbPath;
+    private final TransactionManager tm;
     private final InputView inputView;
     private final OutputView outputView;
 
-    public DatabaseController(Database db, String dbPath, InputView inputView, OutputView outputView) {
+    public DatabaseController(Database db, String dbPath, TransactionManager tm, InputView inputView, OutputView outputView) {
         this.db = db;
         this.dbPath = dbPath;
+        this.tm = tm;
         this.inputView = inputView;
         this.outputView = outputView;
     }
@@ -42,7 +45,7 @@ public class DatabaseController {
             try {
                 outputView.printTables(db.tableNames());
                 outputView.printMenu();
-                int selection = inputView.readMenuSelection(0, 8);
+                int selection = inputView.readMenuSelection(0, 11);
 
                 if (selection == MenuAction.EXIT.code()) {
                     saveQuiet(); outputView.printMessage("종료합니다."); break;
@@ -62,6 +65,12 @@ public class DatabaseController {
                     trySave();
                 } else if (selection == MenuAction.PK_RANGE.code()) {
                     handleFindPkRange(table);
+                } else if (selection == MenuAction.BEGIN.code()) {
+                    handleBegin();
+                } else if (selection == MenuAction.COMMIT.code()) {
+                    handleCommit();
+                } else if (selection == MenuAction.ROLLBACK.code()) {
+                    handleRollback();
                 } else {
                     throw new IllegalArgumentException("[ERROR] 잘못된 선택입니다.");
                 }
@@ -82,8 +91,15 @@ public class DatabaseController {
 
     void handleInsert(Table table) {
         Map<String, String> values = inputView.readRecordValues(table.getColumns());
-        table.insertRecord(new Record(values));
-        outputView.printMessage("추가 완료");
+        Record record = new Record(values);
+
+        if (tm != null && tm.isActive()) {
+            tm.insert(table.getName(), record);
+            outputView.printMessage("(트랜잭션 메모리 버퍼) 추가 완료");
+        } else {
+            table.insertRecord(record);
+            outputView.printMessage("추가 완료");
+        }
     }
 
     void handlePatchByPk(Table table) {
@@ -97,16 +113,57 @@ public class DatabaseController {
 
         Map<String, String> merged = new HashMap<>(old.values());
         for (var e : changes.entrySet()) merged.put(e.getKey(), e.getValue());
+        Record newRecord = new Record(merged);
 
-        table.updateById(key, new Record(merged));
-        outputView.printRecord(table, table.selectById(key));
+        if (tm != null && tm.isActive()) {
+            tm.update(table.getName(), key, newRecord);
+            outputView.printMessage("(트랜잭션 메모리 버퍼) 수정 완료");
+        } else {
+            table.updateById(key, newRecord);
+            outputView.printRecord(table, table.selectById(key));
+        }
     }
 
     void handleDeleteByPk(Table table) {
         String pkCol = table.getPrimaryKeyColumn();
         String key = inputView.readPrimaryKey(pkCol);
-        table.deleteById(key);
-        outputView.printMessage("삭제 완료");
+
+        if (tm != null && tm.isActive()) {
+            tm.delete(table.getName(), key);
+            outputView.printMessage("(트랜잭션 메모리 버퍼) 삭제 완료");
+        } else {
+            table.deleteById(key);
+            outputView.printMessage("삭제 완료");
+        }
+    }
+
+    void handleBegin() {
+        if (tm == null) {
+            throw new IllegalArgumentException("[ERROR] 트랜잭션 매니저가 설정되지 않았습니다.");
+        }
+        if (tm.isActive()) {
+            throw new IllegalArgumentException("[ERROR] 이미 트랜잭션이 진행중입니다.");
+        }
+        tm.begin();
+        outputView.printMessage("Transaction Begin.");
+    }
+
+    void handleCommit() {
+        validateOnRunningTransaction();
+
+        try {
+            tm.commit();
+            db.saveToFile(dbPath);
+            outputView.printMessage("COMMIT 완료");
+        } catch (IOException e) {
+            throw new IllegalArgumentException("[ERROR] 커밋에 실패했습니다.");
+        }
+    }
+
+    void handleRollback() {
+        validateOnRunningTransaction();
+        tm.rollback();
+        outputView.printMessage("ROLLBACK 완료");
     }
 
     void handleFindAllBy(Table table) {
@@ -153,6 +210,12 @@ public class DatabaseController {
         try { save(); outputView.printMessage("저장 완료"); }
         catch (IOException e) {
             throw new IllegalArgumentException("[ERROR] 저장 실패.");
+        }
+    }
+
+    private void validateOnRunningTransaction() {
+        if (tm == null || !tm.isActive()) {
+            throw new IllegalArgumentException("[ERROR] 시작된 트랜잭션이 없습니다.");
         }
     }
 }

@@ -1,4 +1,4 @@
-package model.wal;
+package util.wal;
 
 import java.io.Serializable;
 import java.util.Map;

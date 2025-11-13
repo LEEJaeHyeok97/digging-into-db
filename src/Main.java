@@ -4,12 +4,15 @@ import java.util.Map;
 import model.Database;
 import model.Record;
 import model.Table;
+import util.transaction.TransactionManager;
+import util.wal.Wal;
 import view.InputView;
 import view.OutputView;
 
 public class Main {
 
     private static final String DB_PATH = "database.db";
+    private static final String WAL_PATH = "database.wal";
 
     public static void main(String[] args) throws Exception {
 
@@ -18,6 +21,9 @@ public class Main {
             d.addTable(users);
         });
 
+        var log = Wal.readAll(WAL_PATH);
+        TransactionManager.recover(db, log);
+
         Table users = db.getTable("users");
         if (users.size() == 0) {
             users.insertRecord(new Record(Map.of("id", "1", "name", "Alice", "age", "23")));
@@ -25,7 +31,11 @@ public class Main {
             db.saveToFile(DB_PATH);
         }
 
-        DatabaseController databaseController = new DatabaseController(db, DB_PATH, new InputView(), new OutputView());
-        databaseController.run();
+        try (Wal wal = new Wal(WAL_PATH)) {
+            TransactionManager tm = new TransactionManager(db, wal);
+
+            DatabaseController databaseController = new DatabaseController(db, DB_PATH, tm, new InputView(), new OutputView());
+            databaseController.run();
+        }
     }
 }
