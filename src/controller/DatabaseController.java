@@ -45,14 +45,15 @@ public class DatabaseController {
             try {
                 outputView.printTables(db.tableNames());
                 outputView.printMenu();
+
                 int selection = inputView.readMenuSelection(0, 11);
 
                 if (selection == MenuAction.EXIT.code()) {
                     saveQuiet(); outputView.printMessage("종료합니다."); break;
                 } else if (selection == MenuAction.LIST.code()) {
-                    outputView.printRecords(table, table.selectAll());
+                    runList(table);
                 } else if (selection == MenuAction.FIND_BY_PK.code()) {
-                    handleSelectByPk(table);
+                    runFindByPk(table);
                 } else if (selection == MenuAction.INSERT.code()) {
                     handleInsert(table);
                 } else if (selection == MenuAction.PATCH.code()) {
@@ -60,11 +61,11 @@ public class DatabaseController {
                 } else if (selection == MenuAction.DELETE.code()) {
                     handleDeleteByPk(table);
                 } else if (selection == MenuAction.FIND_ALL_BY.code()) {
-                    handleFindAllBy(table);
+                    runFindByPk(table);
                 } else if (selection == MenuAction.SAVE.code()) {
                     trySave();
                 } else if (selection == MenuAction.PK_RANGE.code()) {
-                    handleFindPkRange(table);
+                    runRange(table);
                 } else if (selection == MenuAction.BEGIN.code()) {
                     handleBegin();
                 } else if (selection == MenuAction.COMMIT.code()) {
@@ -82,59 +83,35 @@ public class DatabaseController {
         }
     }
 
-    void handleSelectByPk(Table table) {
-        String pkCol = table.getPrimaryKeyColumn();
-        String key = inputView.readPrimaryKey(pkCol);
-        var r = table.selectById(key);
-        if (r == null) outputView.printMessage("(없음)"); else outputView.printRecord(table, r);
+    void handleInsert(Table table) throws IOException {
+        var values = inputView.readRecordValues(table.getColumns());
+        var rec = new Record(values);
+        inAutoTx(() -> tm.insert(table.getName(), rec)); // 항상 TM 경유
+        outputView.printMessage("추가 완료");
     }
 
-    void handleInsert(Table table) {
-        Map<String, String> values = inputView.readRecordValues(table.getColumns());
-        Record record = new Record(values);
-
-        if (tm != null && tm.isActive()) {
-            tm.insert(table.getName(), record);
-            outputView.printMessage("(트랜잭션 메모리 버퍼) 추가 완료");
-        } else {
-            table.insertRecord(record);
-            outputView.printMessage("추가 완료");
-        }
-    }
-
-    void handlePatchByPk(Table table) {
+    void handlePatchByPk(Table table) throws IOException {
         String pkCol = table.getPrimaryKeyColumn();
         String key = inputView.readPrimaryKey(pkCol);
-        var old = table.selectById(key);
+        long snap = db.currentCommitSequence();
+        var old = table.selectByIdAt(key, snap);
         if (old == null) { outputView.printMessage("[ERROR] 존재하지 않는 레코드: " + key); return; }
 
         var changes = inputView.readPatchPairs(Set.copyOf(table.getColumns()));
-        changes.remove(pkCol); // PK 변경 방지
+        changes.remove(pkCol);
+        Map<String,String> merged = new HashMap<>(old.values());
+        merged.putAll(changes);
+        var newRec = new Record(merged);
 
-        Map<String, String> merged = new HashMap<>(old.values());
-        for (var e : changes.entrySet()) merged.put(e.getKey(), e.getValue());
-        Record newRecord = new Record(merged);
-
-        if (tm != null && tm.isActive()) {
-            tm.update(table.getName(), key, newRecord);
-            outputView.printMessage("(트랜잭션 메모리 버퍼) 수정 완료");
-        } else {
-            table.updateById(key, newRecord);
-            outputView.printRecord(table, table.selectById(key));
-        }
+        inAutoTx(() -> tm.update(table.getName(), key, newRec));
+        outputView.printMessage("수정 완료");
     }
 
-    void handleDeleteByPk(Table table) {
+    void handleDeleteByPk(Table table) throws IOException {
         String pkCol = table.getPrimaryKeyColumn();
         String key = inputView.readPrimaryKey(pkCol);
-
-        if (tm != null && tm.isActive()) {
-            tm.delete(table.getName(), key);
-            outputView.printMessage("(트랜잭션 메모리 버퍼) 삭제 완료");
-        } else {
-            table.deleteById(key);
-            outputView.printMessage("삭제 완료");
-        }
+        inAutoTx(() -> tm.delete(table.getName(), key));
+        outputView.printMessage("삭제 완료");
     }
 
     void handleBegin() {
@@ -164,18 +141,6 @@ public class DatabaseController {
         validateOnRunningTransaction();
         tm.rollback();
         outputView.printMessage("ROLLBACK 완료");
-    }
-
-    void handleFindAllBy(Table table) {
-        String col = inputView.promptNonEmpty("검색 컬럼 ▶ ");
-        String val = inputView.promptNonEmpty("값 ▶ ");
-        outputView.printRecords(table, table.findAllBy(col, val));
-    }
-
-    void handleFindPkRange(Table table) {
-        String from = inputView.promptNonEmpty("PK from ▶ ");
-        String to   = inputView.promptNonEmpty("PK to   ▶ ");
-        outputView.printRecords(table, table.findAllByPkBetween(from, true, to, true));
     }
 
     private Table selectTable() {
@@ -217,5 +182,32 @@ public class DatabaseController {
         if (tm == null || !tm.isActive()) {
             throw new IllegalArgumentException("[ERROR] 시작된 트랜잭션이 없습니다.");
         }
+    }
+
+    private void runList(Table table) {
+        long snap = db.currentCommitSequence();
+        outputView.printRecords(table, table.selectAllAt(snap));
+    }
+
+    private void runFindByPk(Table table) {
+        String pkCol = table.getPrimaryKeyColumn();
+        String key = inputView.readPrimaryKey(pkCol);
+        long snap = db.currentCommitSequence();
+        var r = table.selectByIdAt(key, snap);
+        if (r == null) outputView.printMessage("(없음)"); else outputView.printRecord(table, r);
+    }
+
+    private void runRange(Table table) {
+        String from = inputView.promptNonEmpty("PK from ▶ ");
+        String to   = inputView.promptNonEmpty("PK to   ▶ ");
+        long snap = db.currentCommitSequence();
+        outputView.printRecords(table, table.findAllByPkBetweenAt(from, true, to, true, snap));
+    }
+
+    private void inAutoTx(Runnable r) throws IOException {
+        if (tm.isActive()) { r.run(); return; }
+        tm.begin();
+        try { r.run(); tm.commit(); }
+        catch (Exception e) { tm.rollback(); throw e; }
     }
 }

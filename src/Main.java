@@ -24,15 +24,18 @@ public class Main {
         var log = Wal.readAll(WAL_PATH);
         TransactionManager.recover(db, log);
 
-        Table users = db.getTable("users");
-        if (users.size() == 0) {
-            users.insertRecord(new Record(Map.of("id", "1", "name", "Alice", "age", "23")));
-            users.insertRecord(new Record(Map.of("id", "2", "name", "Bob",   "age", "28")));
-            db.saveToFile(DB_PATH);
-        }
-
         try (Wal wal = new Wal(WAL_PATH)) {
             TransactionManager tm = new TransactionManager(db, wal);
+
+            Table users = db.getTable("users");
+            long snap = db.currentCommitSequence();
+            if (users.selectAllAt(snap).isEmpty()) {
+                tm.begin();
+                tm.insert("users", new Record(Map.of("id","1","name","Alice","age","23")));
+                tm.insert("users", new Record(Map.of("id","2","name","Bob",  "age","28")));
+                tm.commit();
+                db.saveToFile(DB_PATH);
+            }
 
             DatabaseController databaseController = new DatabaseController(db, DB_PATH, tm, new InputView(), new OutputView());
             databaseController.run();

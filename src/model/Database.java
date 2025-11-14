@@ -20,6 +20,15 @@ public class Database implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Map<String, Table> tables = new HashMap<>();
+    private long commitSequence = 0L;
+
+    public long currentCommitSequence() {
+        return commitSequence;
+    }
+
+    public long nextCommitSequence() {
+        return ++commitSequence;
+    }
 
     public void addTable(Table table) {
         tables.put(table.getName(), table);

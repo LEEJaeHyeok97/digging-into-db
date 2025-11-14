@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.TreeMap;
 
 public class Table implements Serializable {
@@ -15,19 +16,15 @@ public class Table implements Serializable {
 
     private final String name;
     private final List<String> columns;
-    private final List<Record> records;
     private final String primaryKeyColumn;
-    private final Map<String, Record> pkIndex;
-    private final NavigableMap<String, Record> pkOrdered;
+    private final Map<String, VersionChain> chains = new HashMap<>();
+    private final TreeMap<String, VersionChain> ordered = new TreeMap<>();
 
     public Table(String name, List<String> columns, String primaryKeyColumn) {
         validatePkInColumn(columns, primaryKeyColumn);
         this.name = name;
-        this.columns = new ArrayList<>(columns);
-        this.records = new ArrayList<>();
+        this.columns = columns;
         this.primaryKeyColumn = primaryKeyColumn;
-        this.pkIndex = new HashMap<>();
-        this.pkOrdered = new TreeMap<>();
     }
 
     public String getName() {
@@ -42,61 +39,77 @@ public class Table implements Serializable {
         return primaryKeyColumn;
     }
 
-    public List<Record> selectAll() {
-        return Collections.unmodifiableList(records);
-    }
-
-    public Record selectById(String key) {
-        return pkIndex.get(key);
-    }
-
-    public void insertRecord(Record record) {
-        String key = requirePk(record);
-        validateDuplicatedPK(key);
-        records.add(record);
-        pkIndex.put(key, record);
-        pkOrdered.put(key, record);
-    }
-
-    public void updateById(String key, Record newRecord) {
-        Record oldRecord = pkIndex.get(key);
-        validateIsExists(oldRecord);
-
-        String newKey = requirePk(newRecord);
-        validateIsDifferentPK(key, newKey);
-
-        int idx = indexOfIdentity(oldRecord);
-        records.set(idx, newRecord);
-        pkIndex.put(key, newRecord);
-        pkOrdered.put(key, newRecord);
-    }
-
-    public void deleteById(String key) {
-        Record oldRecord = pkIndex.remove(key);
-        validateIsNull(oldRecord);
-        pkOrdered.remove(key);
-        int idx = indexOfIdentity(oldRecord);
-        records.remove(idx);
-    }
-
-    public List<Record> findAllBy(String column, String value) {
-        validateContainsColumn(column);
-        ArrayList<Record> out = new ArrayList<>();
-        for (Record record : records) {
-            if (value.equals(record.get(column))) {
-                out.add(record);
-            }
+    public Record selectByIdAt(String key, long snapTs) {
+        VersionChain chain = chains.get(key);
+        if (chain == null) {
+            return null;
         }
 
+        Version version = chain.visibleAt(snapTs);
+        if (version == null) {
+            return null;
+        }
+
+        return new Record(version.values);
+    }
+
+    public List<Record> selectAllAt(long snapTs) {
+        ArrayList<Record> out = new ArrayList<>();
+        for (var e : ordered.entrySet()) {
+            Version v = e.getValue().visibleAt(snapTs);
+            if (v != null) out.add(new Record(v.values));
+        }
         return out;
     }
 
-    public List<Record> findAllByPkBetween(String from, boolean fromInclusive, String to, boolean toInclusive) {
-        return new ArrayList<>(pkOrdered.subMap(from, fromInclusive, to, toInclusive).values());
+    public List<Record> findAllByPkBetweenAt(String from, boolean fromInc, String to, boolean toInc, long snapTs) {
+        ArrayList<Record> out = new ArrayList<>();
+        for (var e : ordered.subMap(from, fromInc, to, toInc).entrySet()) {
+            Version v = e.getValue().visibleAt(snapTs);
+            if (v != null) out.add(new Record(v.values));
+        }
+        return out;
     }
 
-    public int size() {
-        return records.size();
+    public List<Record> findAllByAt(String column, String value, long snapTs) {
+        validateContainsColumn(column);
+        ArrayList<Record> out = new ArrayList<>();
+        for (var ch : ordered.values()) {
+            Version v = ch.visibleAt(snapTs);
+            if (v != null && value.equals(v.values.get(column))) {
+                out.add(new Record(v.values));
+            }
+        }
+        return out;
+    }
+
+    public int sizeVisible(long snapTs) {
+        return selectAllAt(snapTs).size();
+    }
+
+    public void insertCommitted(Record record, long ts) {
+        String key = requirePk(record);
+        VersionChain ch = chains.get(key);
+        if (ch == null) {
+            ch = new VersionChain();
+            chains.put(key, ch);
+            ordered.put(key, ch);
+        }
+        if (ch.alive()) throw new IllegalArgumentException("[ERROR] PK 중복");
+        ch.commitInsert(record.values(), ts);
+    }
+
+    public void updateCommitted(String key, Record newRecord, long ts) {
+        validatePkNotChanged(key, newRecord);
+        VersionChain ch = chains.get(key);
+        if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
+        ch.commitUpdate(newRecord.values(), ts);
+    }
+
+    public void deleteCommitted(String key, long ts) {
+        VersionChain ch = chains.get(key);
+        if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
+        ch.commitDelete(ts);
     }
 
     private void validateContainsColumn(String column) {
@@ -105,43 +118,9 @@ public class Table implements Serializable {
         }
     }
 
-    private static void validateIsNull(Record oldRecord) {
-        if (oldRecord == null) {
-            throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드입니다.");
-        }
-    }
-
-    private int indexOfIdentity(Record oldRecord) {
-        for (int i = 0; i < records.size(); i++) {
-            if (records.get(i) == oldRecord) {
-                return i;
-            }
-        }
-
-        for (int i = 0; i < records.size(); i++) {
-            if (records.get(i).equals(oldRecord)) {
-                return i;
-            }
-        }
-        throw new IllegalArgumentException("[ERROR] 인덱스 갱신 실패");
-    }
-
-    private static void validateIsDifferentPK(String key, String newKey) {
-        if (!key.equals(newKey)) {
-            throw new IllegalArgumentException("[ERROR] PK는 변경할 수 없습니다.");
-        }
-    }
-
-    private static void validateIsExists(Record oldRecord) {
-        if (oldRecord == null) {
-            throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드입니다.");
-        }
-    }
-
-    private void validateDuplicatedPK(String key) {
-        if (pkIndex.containsKey(key)) {
-            throw new IllegalArgumentException("[ERROR] PK 중복");
-        }
+    private void validatePkNotChanged(String key, Record newRec) {
+        String newKey = newRec.get(primaryKeyColumn);
+        if (!Objects.equals(key, newKey)) throw new IllegalArgumentException("[ERROR] PK는 변경할 수 없습니다.");
     }
 
     private static void validatePkInColumn(List<String> columns, String primaryKeyColumn) {

@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import model.Database;
@@ -75,7 +74,7 @@ public class TransactionManager {
         ensureActive();
         current.ops.add(new WalEntry(current.id, Op.DELETE, tableName, pk, null));
     }
-    
+
     public void commit() throws IOException {
         ensureActive();
         long id = current.id;
@@ -87,8 +86,9 @@ public class TransactionManager {
 
         wal.append(new WalEntry(id, Op.COMMIT, null, null, null));
 
+        long ts = db.nextCommitSequence();
         for (WalEntry e : current.ops) {
-            applyOne(db, e, false);
+            applyOneCommitted(db, e, ts, false);
         }
 
         current = null;
@@ -115,10 +115,13 @@ public class TransactionManager {
 
         for (var entry : byTx.entrySet()) {
             long tx = entry.getKey();
-            if (!committed.contains(tx)) continue;
+            if (!committed.contains(tx)) {
+                continue;
+            }
 
+            long ts = db.nextCommitSequence();
             for (WalEntry e : entry.getValue()) {
-                applyOne(db, e, true);
+                applyOneCommitted(db, e, ts,true);
             }
         }
     }
@@ -138,21 +141,23 @@ public class TransactionManager {
         return table;
     }
 
-    private static void applyOne(Database db, WalEntry e, boolean tolerant) {
-        Table table = db.getTable(e.table);
-        if (table == null) return;
+    private static void applyOneCommitted(Database db, WalEntry e, long ts, boolean tolerant) {
+        Table t = db.getTable(e.table);
+        if (t == null) {
+            return;
+        }
 
         try {
             switch (e.op) {
-                case INSERT -> table.insertRecord(new Record(e.values));
-                case UPDATE -> table.updateById(e.pk, new Record(e.values));
-                case DELETE -> table.deleteById(e.pk);
+                case INSERT -> t.insertCommitted(new Record(e.values), ts);
+                case UPDATE -> t.updateCommitted(e.pk, new Record(e.values), ts);
+                case DELETE -> t.deleteCommitted(e.pk, ts);
                 default -> {
                 }
             }
-        } catch (Exception exception) {
+        } catch (Exception ex) {
             if (!tolerant) {
-                throw exception;
+                throw ex;
             }
         }
     }
