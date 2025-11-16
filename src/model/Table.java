@@ -3,12 +3,10 @@ package model;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.TreeMap;
+import model.index.BPlusTree;
+import model.index.OrderedIndex;
 
 public class Table implements Serializable {
 
@@ -17,8 +15,7 @@ public class Table implements Serializable {
     private final String name;
     private final List<String> columns;
     private final String primaryKeyColumn;
-    private final Map<String, VersionChain> chains = new HashMap<>();
-    private final TreeMap<String, VersionChain> ordered = new TreeMap<>();
+    private final OrderedIndex<String, VersionChain> index = new BPlusTree<>();
 
     public Table(String name, List<String> columns, String primaryKeyColumn) {
         validatePkInColumn(columns, primaryKeyColumn);
@@ -40,7 +37,7 @@ public class Table implements Serializable {
     }
 
     public Record selectByIdAt(String key, long snapTs) {
-        VersionChain chain = chains.get(key);
+        VersionChain chain = index.get(key);
         if (chain == null) {
             return null;
         }
@@ -54,9 +51,9 @@ public class Table implements Serializable {
     }
 
     public List<Record> selectAllAt(long snapTs) {
-        ArrayList<Record> out = new ArrayList<>();
-        for (var e : ordered.entrySet()) {
-            Version v = e.getValue().visibleAt(snapTs);
+        var out = new java.util.ArrayList<Record>();
+        for (var e : index.entries()) {
+            var v = e.getValue().visibleAt(snapTs);
             if (v != null) out.add(new Record(v.values));
         }
         return out;
@@ -64,36 +61,19 @@ public class Table implements Serializable {
 
     public List<Record> findAllByPkBetweenAt(String from, boolean fromInc, String to, boolean toInc, long snapTs) {
         ArrayList<Record> out = new ArrayList<>();
-        for (var e : ordered.subMap(from, fromInc, to, toInc).entrySet()) {
+        for (var e : index.range(from, fromInc, to, toInc)) {
             Version v = e.getValue().visibleAt(snapTs);
             if (v != null) out.add(new Record(v.values));
         }
         return out;
     }
 
-    public List<Record> findAllByAt(String column, String value, long snapTs) {
-        validateContainsColumn(column);
-        ArrayList<Record> out = new ArrayList<>();
-        for (var ch : ordered.values()) {
-            Version v = ch.visibleAt(snapTs);
-            if (v != null && value.equals(v.values.get(column))) {
-                out.add(new Record(v.values));
-            }
-        }
-        return out;
-    }
-
-    public int sizeVisible(long snapTs) {
-        return selectAllAt(snapTs).size();
-    }
-
     public void insertCommitted(Record record, long ts) {
         String key = requirePk(record);
-        VersionChain ch = chains.get(key);
+        VersionChain ch = index.get(key);
         if (ch == null) {
             ch = new VersionChain();
-            chains.put(key, ch);
-            ordered.put(key, ch);
+            index.put(key, ch);
         }
         if (ch.alive()) throw new IllegalArgumentException("[ERROR] PK 중복");
         ch.commitInsert(record.values(), ts);
@@ -101,13 +81,13 @@ public class Table implements Serializable {
 
     public void updateCommitted(String key, Record newRecord, long ts) {
         validatePkNotChanged(key, newRecord);
-        VersionChain ch = chains.get(key);
+        VersionChain ch = index.get(key);
         if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
         ch.commitUpdate(newRecord.values(), ts);
     }
 
     public void deleteCommitted(String key, long ts) {
-        VersionChain ch = chains.get(key);
+        VersionChain ch = index.get(key);
         if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
         ch.commitDelete(ts);
     }
