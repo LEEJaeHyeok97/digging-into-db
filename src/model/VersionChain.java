@@ -9,6 +9,11 @@ public class VersionChain implements Serializable {
 
     private final List<Version> vs = new ArrayList<>();
 
+    public Version latest() {
+        if (vs.isEmpty()) return null;
+        return vs.get(vs.size() - 1);
+    }
+
     public Version visibleAt(long snap) {
         for (int i = vs.size() - 1; i >= 0; i--) {
             Version v = vs.get(i);

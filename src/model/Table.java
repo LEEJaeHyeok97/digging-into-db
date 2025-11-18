@@ -81,19 +81,33 @@ public class Table implements Serializable {
         }
         if (ch.alive()) throw new IllegalArgumentException("[ERROR] PK 중복");
         ch.commitInsert(record.values(), ts);
+        secAddName(record.get("name"), key);
     }
 
     public void updateCommitted(String key, Record newRecord, long ts) {
         validatePkNotChanged(key, newRecord);
         VersionChain ch = index.get(key);
         if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
+
+        Version old = ch.latest();
+        String oldName = old.values.get("name");
+
         ch.commitUpdate(newRecord.values(), ts);
+
+        String newName = newRecord.get("name");
+        if (Objects.equals(oldName, newName)) {
+            secRemoveName(oldName, key);
+            secAddName(newName, key);
+        }
     }
 
     public void deleteCommitted(String key, long ts) {
         VersionChain ch = index.get(key);
         if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
+        Version old = ch.latest();
+
         ch.commitDelete(ts);
+        secRemoveName(old.values.get("name"), key);
     }
 
     private void secAddName(String name, String pk) {
