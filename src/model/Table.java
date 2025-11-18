@@ -110,6 +110,35 @@ public class Table implements Serializable {
         secRemoveName(old.values.get("name"), key);
     }
 
+    public List<Record> findAllByAt(String column, String value, long snapTs) {
+        if ("name".equals(column)) {
+            ArrayList<Record> out = new ArrayList<>();
+            Set<String> set = idxName.get(value);
+            if (set == null) return out;
+
+            for (String pk : set) {
+                VersionChain chain = index.get(pk);
+                if (chain == null) continue;
+                Version v = chain.visibleAt(snapTs);
+                if (v != null && Objects.equals(v.values.get("name"), value)) {
+                    out.add(new Record(v.values));
+                }
+            }
+
+            return out;
+        }
+
+        ArrayList<Record> out = new ArrayList<>();
+        for (var e : index.entries()) {
+            Version v = e.getValue().visibleAt(snapTs);
+            if (v != null && Objects.equals(v.values.get(column), value)) {
+                out.add(new Record(v.values));
+            }
+        }
+
+        return out;
+    }
+
     private void secAddName(String name, String pk) {
         if (name == null) {
             return;

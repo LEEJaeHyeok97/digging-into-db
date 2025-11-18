@@ -61,7 +61,7 @@ public class DatabaseController {
                 } else if (selection == MenuAction.DELETE.code()) {
                     handleDeleteByPk(table);
                 } else if (selection == MenuAction.FIND_ALL_BY.code()) {
-                    runFindByPk(table);
+                    handleFindAllBy(table);
                 } else if (selection == MenuAction.SAVE.code()) {
                     trySave();
                 } else if (selection == MenuAction.PK_RANGE.code()) {
@@ -112,6 +112,13 @@ public class DatabaseController {
         String key = inputView.readPrimaryKey(pkCol);
         inAutoTx(() -> tm.delete(table.getName(), key));
         outputView.printMessage("삭제 완료");
+    }
+
+    void handleFindAllBy(Table table) {
+        String col = inputView.promptNonEmpty("검색 컬럼 ▶ ");
+        String val = inputView.promptNonEmpty("값 ▶ ");
+        long snap = db.currentCommitSequence();
+        outputView.printRecords(table, table.findAllByAt(col, val, snap));
     }
 
     void handleBegin() {
