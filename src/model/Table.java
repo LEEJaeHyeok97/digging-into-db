@@ -3,8 +3,11 @@ package model;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import model.index.BPlusTree;
 import model.index.OrderedIndex;
 
@@ -16,6 +19,7 @@ public class Table implements Serializable {
     private final List<String> columns;
     private final String primaryKeyColumn;
     private final OrderedIndex<String, VersionChain> index = new BPlusTree<>();
+    private final OrderedIndex<String, Set<String>> idxName = new BPlusTree<>();
 
     public Table(String name, List<String> columns, String primaryKeyColumn) {
         validatePkInColumn(columns, primaryKeyColumn);
@@ -90,6 +94,34 @@ public class Table implements Serializable {
         VersionChain ch = index.get(key);
         if (ch == null || !ch.alive()) throw new IllegalArgumentException("[ERROR] 존재하지 않는 레코드");
         ch.commitDelete(ts);
+    }
+
+    private void secAddName(String name, String pk) {
+        if (name == null) {
+            return;
+        }
+
+        Set<String> set = idxName.get(name);
+        if (set == null) {
+            set = new LinkedHashSet<>();
+            idxName.put(name, set);
+        }
+
+        set.add(pk);
+    }
+
+    private void secRemoveName(String name, String pk) {
+        if (name == null) {
+            return;
+        }
+
+        Set<String> set = idxName.get(name);
+        if (set != null) {
+            set.remove(pk);
+            if (set.isEmpty()) {
+                idxName.remove(name);
+            }
+        }
     }
 
     private void validateContainsColumn(String column) {
